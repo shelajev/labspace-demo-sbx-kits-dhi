@@ -179,3 +179,84 @@ sbx create --name prewarm claude /tmp && sbx rm -f prewarm
 > policy to allow the path, or skip this optional prewarm step. Check your
 > active policies with `sbx policy ls` and review your governance
 > configuration with your administrator.
+
+
+## If sandboxes can't reach Docker Hub (AI Governance)
+
+This lab needs the sandbox to pull base images and tools from Docker Hub,
+GitHub, npm, and `dhi.io`. If your Docker organization enforces **AI
+Governance**, a restrictive network policy can block these, and the lab will
+fail partway through — the agent authenticates fine but the build cannot pull
+its base image.
+
+### Symptoms
+
+The agent reports a network-policy denial during `docker build`, for example:
+
+```text
+Blocked by network policy: domain registry-1.docker.io:443
+  detail: no matching allow rule — blocked by default deny policy
+```
+
+### Confirm it is a governance policy
+
+```bash
+sbx policy ls
+```
+
+If the output shows `Governance — Managed by <org>` and the active rules only
+allow AI-service endpoints, your org policy is the cause. Local
+`sbx policy allow network ...` rules will **not** help — governance policy
+takes precedence and does not delegate network rules to local policy:
+
+```bash
+sbx policy ls --include-inactive
+# look for: "inactive — corporate policy takes precedence and does not
+# delegate this rule type to local policy."
+```
+
+### Fix: allow the lab's domains in the AI Governance portal
+
+An organization owner must add an **allow** network policy. In the Docker
+Admin Console: select your organization, open **AI Governance** (sandbox
+policies), and create a new network **Allow** rule (for example "Allow SBX
+Kits DHI Lab") with these resources:
+
+```text
+# Docker Hub: registry, token auth, blob/CDN storage
+docker.io:443
+*.docker.io:443
+registry-1.docker.io:443
+auth.docker.io:443
+docker.com:443
+*.docker.com:443
+hub.docker.com:443
+api.docker.com:443
+production.cloudflare.docker.com:443
+production.cloudfront.docker.com:443
+
+# GitHub: hadolint and dhictl release downloads
+github.com:443
+api.github.com:443
+*.githubusercontent.com:443
+
+# npm registry (app dependency install)
+registry.npmjs.org:443
+
+# DHI step
+dhi.io:443
+```
+
+After the policy syncs, confirm from the host and recreate the sandbox:
+
+```bash
+sbx policy ls          # the new allow rule should appear as remote/active
+sbx rm -f p1-yolo      # recreate so it starts under the updated policy
+```
+
+> [!NOTE]
+> No org access to change governance? Run the lab while signed in to a Docker
+> account that is **not** subject to AI Governance (a personal account, or an
+> org without sandbox policies). The built-in local defaults already permit
+> Docker Hub, npm, and GitHub, so the lab runs without extra rules.
+
